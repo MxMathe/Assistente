@@ -1,7 +1,7 @@
 """
 Assistente de voz em Python (somente Windows).
 
-Diga "olá assistente" para ativar. Comandos de exemplo:
+Comando para iniciar "olá assistente". Comandos de exemplo:
     "abrir youtube"
     "abrir o vs code"
     "pesquisar receita de bolo"

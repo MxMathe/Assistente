@@ -1,5 +1,7 @@
 """Entrada e saída de voz: falar (texto -> áudio) e ouvir (áudio -> texto)."""
 
+import re
+
 import pyttsx3
 import speech_recognition as sr
 
@@ -48,3 +50,9 @@ def ouvir(timeout=5, phrase_time_limit=10, verboso=True):
         print("Erro na requisição ao serviço de reconhecimento.")
 
     return ""
+
+def confirmar(pergunta):
+    falar(pergunta)
+    resposta = ouvir()
+
+    return "sim" in re.findall(r"\w+", resposta)

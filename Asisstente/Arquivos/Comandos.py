@@ -1,24 +1,16 @@
-"""
-Comandos do assistente.
-
-Cada comando é uma função que recebe o texto falado. A tabela COMANDOS, no
-final do arquivo, liga as palavras-gatilho a cada função.
-
-Para criar um comando novo:
-    1. escreva uma função  def meu_comando(comando): ...
-    2. adicione uma linha na tabela COMANDOS
-"""
 
 from datetime import datetime
+import re
 import webbrowser
 from urllib.parse import quote_plus
 
 import wikipedia
 
+import Lembretes
 from Config import SITES
 from Programas import abrir_programa
 from Texto import extrair_termo
-from Voz import falar
+from Voz import confirmar, falar, ouvir
 
 wikipedia.set_lang("pt")
 
@@ -129,14 +121,137 @@ def abrir(comando):
     else:
         abrir_programa(alvo)
 
+# =========================
+# LEMBRETES
+# =========================
 
+PADRAO_ANOTAR = (
+    r"^(anotar|anota|anote|me lembre de|me lembra de|lembrar de"
+    r"|(criar|novo|adicionar) lembrete( para| de)?)( que)?\b"
+)
+PADRAO_APAGAR = r"^(apagar|excluir|deletar|remover|limpar)\b.*\b(lembretes?|anotações?)\b"
+PADRAO_LISTAR = r"\b(ler|listar|mostrar|quais|meus|minhas|diga)\b.*\b(lembretes?|anotações?)\b"
+ 
+NUMEROS_POR_EXTENSO = {
+    "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
+    "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9, "dez": 10,
+}
+ 
+PALAVRAS_APAGAR = {
+    "apagar", "excluir", "deletar", "remover", "limpar",
+    "lembrete", "lembretes", "anotação", "anotações", "meu", "meus",
+}
+ 
+ 
+def extrair_numero(comando):
+    achado = re.search(r"\d+", comando)
+    if achado:
+        return int(achado.group())
+ 
+    for palavra in comando.split():
+        if palavra in NUMEROS_POR_EXTENSO:
+            return NUMEROS_POR_EXTENSO[palavra]
+ 
+    if "último" in comando or "ultimo" in comando:
+        return len(Lembretes.carregar())
+ 
+    return None
+ 
+ 
+def anotar_lembrete(comando):
+    achado = re.match(PADRAO_ANOTAR, comando)
+    texto = comando[achado.end():].strip()
+ 
+    if not texto:
+        falar("O que devo anotar?")
+        texto = ouvir()
+ 
+        if not texto:
+            falar("Não ouvi nada, então não anotei.")
+            return
+ 
+    numero = Lembretes.adicionar(texto)
+    falar(f"Anotado. Lembrete número {numero}: {texto}")
+ 
+ 
+def listar_lembretes(comando):
+    todos = Lembretes.carregar()
+ 
+    if not todos:
+        falar("Você não tem lembretes.")
+        return
+ 
+    plural = "lembrete" if len(todos) == 1 else "lembretes"
+    partes = [f"Você tem {len(todos)} {plural}."]
+ 
+    for numero, lembrete in enumerate(todos, start=1):
+        partes.append(f"Número {numero}: {lembrete['texto']}.")
+ 
+    falar(" ".join(partes))
+ 
+ 
+def apagar_lembrete(comando):
+    total = len(Lembretes.carregar())
+ 
+    if total == 0:
+        falar("Você não tem lembretes.")
+        return
+ 
+    # 1) Apagar tudo: pede confirmação, porque não dá para desfazer
+    if re.search(r"\b(todos|todas|tudo)\b", comando):
+        if confirmar(f"Você tem {total} lembretes. Tem certeza que quer apagar todos?"):
+            Lembretes.remover_todos()
+            falar("Todos os lembretes foram apagados.")
+        else:
+            falar("Tudo bem, não apaguei nada.")
+        return
+ 
+    # 2) Apagar por número: "apagar lembrete 2" / "o último lembrete"
+    numero = extrair_numero(comando)
+ 
+    # 3) Apagar pelo assunto: "apagar lembrete comprar pão"
+    if numero is None:
+        palavras = extrair_termo(comando, PALAVRAS_APAGAR).split()
+ 
+        if not palavras:
+            falar("Qual lembrete devo apagar? Diga o número, por exemplo: apagar lembrete 2.")
+            return
+ 
+        achados = Lembretes.buscar(palavras)
+ 
+        if not achados:
+            falar("Não encontrei nenhum lembrete com isso.")
+            return
+ 
+        if len(achados) > 1:
+            falar("Encontrei mais de um. Diga o número do lembrete que quer apagar.")
+            return
+ 
+        numero = achados[0]
+ 
+    removido = Lembretes.remover(numero)
+ 
+    if removido:
+        falar(f"Apaguei o lembrete {numero}: {removido['texto']}")
+    else:
+        falar(f"Não existe lembrete número {numero}.")
+ 
+ 
 # =========================
 # TABELA DE COMANDOS
 # =========================
  
-# (palavras-gatilho, função). A ORDEM IMPORTA: vale o primeiro que casar.
-# "pesquisar na wikipedia ..." contém "pesquisar", então Wikipedia vem antes.
+# (gatilhos, função). Cada gatilho é uma expressão regular, procurada na frase
+# com re.search. Palavras simples ("pesquisar") continuam funcionando.
+#
+# A ORDEM IMPORTA: vale o primeiro que casar.
+#  - Lembretes vêm PRIMEIRO: o texto de um lembrete pode conter qualquer coisa
+#    ("me lembre de abrir o banco") e não deve disparar outros comandos.
+#  - "pesquisar na wikipedia ..." contém "pesquisar", então Wikipedia vem antes.
 COMANDOS = [
+    ((PADRAO_APAGAR,), apagar_lembrete),
+    ((PADRAO_ANOTAR,), anotar_lembrete),
+    ((PADRAO_LISTAR,), listar_lembretes),
     (("wikipedia", "wikipédia"), buscar_wikipedia),
     (("pesquisar",), pesquisar_google),
     (("abrir",), abrir),
@@ -149,7 +264,7 @@ COMANDOS = [
  
 def executar_comando(comando):
     for gatilhos, funcao in COMANDOS:
-        if any(gatilho in comando for gatilho in gatilhos):
+        if any(re.search(gatilho, comando) for gatilho in gatilhos):
             funcao(comando)
             return
  

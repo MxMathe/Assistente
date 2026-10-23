@@ -1,4 +1,4 @@
-"""Configurações do assistente. Para ajustar o comportamento, mexa aqui."""
+"""Configurações do assistente"""
 
 SITES = {
     "youtube": "https://www.youtube.com",
