@@ -51,8 +51,16 @@ def ouvir(timeout=5, phrase_time_limit=10, verboso=True):
 
     return ""
 
+AFIRMATIVAS = {"sim", "pode", "claro", "quero", "isso", "ok", "aham", "uhum", "positivo"}
+NEGATIVAS = {"não", "nao", "nunca", "negativo"}
+
 def confirmar(pergunta):
     falar(pergunta)
     resposta = ouvir()
+    palavras = set(re.findall(r"\w+", resposta))
 
-    return "sim" in re.findall(r"\w+", resposta)
+    # A negação vem primeiro: "não, pode deixar" tem "pode", mas é um NÃO
+    if palavras & NEGATIVAS:
+        return False
+
+    return bool(palavras & AFIRMATIVAS)

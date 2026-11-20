@@ -17,7 +17,7 @@ ALIASES = {
 PALAVRAS_LIGACAO = {"o", "a", "os", "as", "na", "no", "sobre", "por", "de", "da", "do"}
 
 # Frases que "acordam" o assistente (o reconhecimento pode variar o acento)
-FRASES_ATIVACAO = ("olá assistente", "ola assistente", "oi assistente")
+FRASES_ATIVACAO = ("olá assistente", "ola assistente", "oi assistente" , "assistente")
 
 # Quantas tentativas seguidas sem fala até voltar ao modo de espera
 MAX_SILENCIOS = 2

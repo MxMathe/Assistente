@@ -8,6 +8,7 @@ import subprocess
 from Config import ALIASES
 from Texto import limpar_inicio
 from Voz import falar
+from Respostas import frase
 
 # Cache dos programas instalados (preenchido na primeira vez que for preciso)
 _cache_programas = None
@@ -100,7 +101,7 @@ def abrir_programa(nome_falado):
     nome, programa = encontrar_programa(nome_falado)
 
     if not programa:
-        falar(f"Não encontrei o programa {nome_falado}.")
+        falar(frase("programa_nao_encontrado", nome=nome_falado))
         return
 
     try:
@@ -111,7 +112,7 @@ def abrir_programa(nome_falado):
         else:
             os.startfile(programa["caminho"])
 
-        falar(f"Abrindo {nome}")
+        falar(frase("abrindo", nome=nome))
 
     except Exception as erro:
         print(f"Erro ao abrir programa: {erro}")

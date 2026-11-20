@@ -1,5 +1,16 @@
+""" 
+Cada comando é uma função que recebe o texto falado. A tabela COMANDOS, no
+final do arquivo, liga as palavras-gatilho a cada função.
+ 
+Para criar um comando novo:
+    1. escreva uma função  def meu_comando(comando): ...
+    2. adicione uma linha na tabela COMANDOS
+"""
+
+
 
 from datetime import datetime
+from difflib import get_close_matches
 import re
 import webbrowser
 from urllib.parse import quote_plus
@@ -11,6 +22,7 @@ from Config import SITES
 from Programas import abrir_programa
 from Texto import extrair_termo
 from Voz import confirmar, falar, ouvir
+from Respostas import frase
 
 wikipedia.set_lang("pt")
 
@@ -107,17 +119,17 @@ def pesquisar_google(comando):
         return
 
     webbrowser.open("https://www.google.com/search?q=" + quote_plus(termo))
-    falar(f"Pesquisando {termo} no Google")
+    falar(frase("pesquisando", termo=termo))
 
 
 def abrir(comando):
     alvo = extrair_termo(comando, {"abrir"})
-
+ 
     if not alvo:
         falar("Qual programa você deseja abrir?")
     elif alvo in SITES:
         webbrowser.open(SITES[alvo])
-        falar(f"Abrindo {alvo}")
+        falar(frase("abrindo", nome=alvo))
     else:
         abrir_programa(alvo)
 
@@ -126,19 +138,27 @@ def abrir(comando):
 # =========================
 
 PADRAO_ANOTAR = (
-    r"^(anotar|anota|anote|me lembre de|me lembra de|lembrar de"
-    r"|(criar|novo|adicionar) lembrete( para| de)?)( que)?\b"
+    r"^(anotar|anota|anote|me lembr(e|a) de|lembr(e|a)[- ]me de|lembrar de"
+    r"|(criar|crie|novo|adicionar|adicione) lembrete( para| de)?)( que)?\b"
 )
-PADRAO_APAGAR = r"^(apagar|excluir|deletar|remover|limpar)\b.*\b(lembretes?|anotações?)\b"
-PADRAO_LISTAR = r"\b(ler|listar|mostrar|quais|meus|minhas|diga)\b.*\b(lembretes?|anotações?)\b"
+PADRAO_APAGAR = (
+    r"^(apagar|apague|apaga|excluir|exclua|deletar|delete|remover|remova|limpar|limpe)\b"
+    r".*\b(lembretes?|anotações?)\b"
+)
+PADRAO_LISTAR = (
+    r"\b(ler|leia|listar|liste|mostrar|mostre|ver|veja|quais|meus|minhas|diga)\b"
+    r".*\b(lembretes?|anotações?)\b"
+)
  
 NUMEROS_POR_EXTENSO = {
     "um": 1, "uma": 1, "dois": 2, "duas": 2, "três": 3, "tres": 3,
     "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9, "dez": 10,
 }
  
+# Palavras do comando que NÃO fazem parte do assunto do lembrete a apagar
 PALAVRAS_APAGAR = {
-    "apagar", "excluir", "deletar", "remover", "limpar",
+    "apagar", "apague", "apaga", "excluir", "exclua", "deletar", "delete",
+    "remover", "remova", "limpar", "limpe",
     "lembrete", "lembretes", "anotação", "anotações", "meu", "meus",
 }
  
@@ -171,14 +191,14 @@ def anotar_lembrete(comando):
             return
  
     numero = Lembretes.adicionar(texto)
-    falar(f"Anotado. Lembrete número {numero}: {texto}")
+    falar(frase("anotado", numero=numero, texto=texto))
  
  
 def listar_lembretes(comando):
     todos = Lembretes.carregar()
  
     if not todos:
-        falar("Você não tem lembretes.")
+        falar(frase("sem_lembretes"))
         return
  
     plural = "lembrete" if len(todos) == 1 else "lembretes"
@@ -194,7 +214,7 @@ def apagar_lembrete(comando):
     total = len(Lembretes.carregar())
  
     if total == 0:
-        falar("Você não tem lembretes.")
+        falar(frase("sem_lembretes"))
         return
  
     # 1) Apagar tudo: pede confirmação, porque não dá para desfazer
@@ -232,9 +252,73 @@ def apagar_lembrete(comando):
     removido = Lembretes.remover(numero)
  
     if removido:
-        falar(f"Apaguei o lembrete {numero}: {removido['texto']}")
+        falar(frase("apagado", numero=numero, texto=removido["texto"]))
     else:
         falar(f"Não existe lembrete número {numero}.")
+
+# =========================
+# TENTAR ENTENDER COMANDOS DESCONHECIDOS
+# =========================
+ 
+# Verbos que vêm seguidos de um complemento ("abrir youtube", "pesquisar gatos").
+# Cada forma que o reconhecimento de voz pode gerar aponta para o verbo certo.
+VERBOS = {
+    "abrir": "abrir", "abra": "abrir", "abre": "abrir",
+    "pesquisar": "pesquisar", "pesquise": "pesquisar", "pesquisa": "pesquisar",
+    "anotar": "anotar", "anote": "anotar",
+}
+ 
+# Palavra solta -> comando completo que a pessoa provavelmente quis dizer
+PISTAS = {
+    "hora": "que horas são",
+    "horas": "que horas são",
+    "data": "que dia é hoje",
+    "lembrete": "ler meus lembretes",
+    "lembretes": "ler meus lembretes",
+    "anotações": "ler meus lembretes",
+}
+ 
+ 
+def adivinhar_comando(comando):
+    """
+    Tenta descobrir qual comando conhecido a frase lembra.
+    Devolve a frase corrigida, ou None se não encontrar nada parecido.
+    """
+    palavras = comando.split()
+ 
+    if not palavras:
+        return None
+ 
+    # 1) A primeira palavra parece um verbo conhecido? ("abri youtube")
+    #    get_close_matches compara por semelhança de letras (0 a 1).
+    parecidos = get_close_matches(palavras[0], VERBOS, n=1, cutoff=0.75)
+ 
+    if parecidos and len(palavras) > 1:
+        verbo = VERBOS[parecidos[0]]
+        return " ".join([verbo] + palavras[1:])
+ 
+    # 2) Alguma palavra lembra uma pista? ("me fala a hora")
+    for palavra in palavras:
+        parecidas = get_close_matches(palavra, PISTAS, n=1, cutoff=0.85)
+ 
+        if parecidas:
+            return PISTAS[parecidas[0]]
+ 
+    return None
+ 
+ 
+def sugerir_comando(comando):
+    sugestao = adivinhar_comando(comando)
+ 
+    if not sugestao:
+        falar(frase("nao_entendi"))
+        return
+ 
+    if confirmar(frase("sugestao", sugestao=sugestao)):
+        # sugerir=False evita um laço infinito se a sugestão também falhar
+        executar_comando(sugestao, sugerir=False)
+    else:
+        falar(frase("cancelado"))
  
  
 # =========================
@@ -248,6 +332,7 @@ def apagar_lembrete(comando):
 #  - Lembretes vêm PRIMEIRO: o texto de um lembrete pode conter qualquer coisa
 #    ("me lembre de abrir o banco") e não deve disparar outros comandos.
 #  - "pesquisar na wikipedia ..." contém "pesquisar", então Wikipedia vem antes.
+
 COMANDOS = [
     ((PADRAO_APAGAR,), apagar_lembrete),
     ((PADRAO_ANOTAR,), anotar_lembrete),
@@ -262,11 +347,14 @@ COMANDOS = [
 ]
  
  
-def executar_comando(comando):
+def executar_comando(comando, sugerir=True):
     for gatilhos, funcao in COMANDOS:
         if any(re.search(gatilho, comando) for gatilho in gatilhos):
             funcao(comando)
             return
  
-    falar("Comando não reconhecido.")
- 
+    # Nenhum gatilho casou: tenta adivinhar o que a pessoa quis dizer
+    if sugerir:
+        sugerir_comando(comando)
+    else:
+        falar(frase("nao_entendi"))

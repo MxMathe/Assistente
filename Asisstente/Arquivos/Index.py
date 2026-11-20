@@ -13,7 +13,7 @@ from Comandos import executar_comando
 from Config import FRASES_ATIVACAO, MAX_SILENCIOS
 from Texto import detectar_ativacao
 from Voz import falar, ouvir
-
+from Respostas import frase
 
 def main():
     ativo = False
@@ -38,14 +38,22 @@ def main():
                 falar("Olá! Como posso te ajudar?")
                 continue
         else:
-            comando = ouvir()
+            texto = ouvir()
+
+        repetiu, resto = detectar_ativacao(texto)
+        comando = resto if repetiu else texto
+
+        if repetiu and not comando:
+                silencios = 0
+                falar("Estou ouvindo.")
+                continue
 
         # Ativo, mas sem fala: após algumas tentativas, volta a dormir
         if not comando:
             silencios += 1
 
             if silencios >= MAX_SILENCIOS:
-                falar("Voltando ao modo de espera.")
+                falar(frase("espera"))
                 ativo = False
 
             continue
